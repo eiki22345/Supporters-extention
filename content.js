@@ -2,6 +2,49 @@
  * サポーターズチャレンジ エフェクト拡張 — 全12パターン対応
  * 対象: https://geek.supporterz.jp/apps/supporterz-challenge
  */
+
+// ──────────────────────────────────────────────────
+// BGM（bgm.wav をループ再生） + ミュートボタン
+// ──────────────────────────────────────────────────
+(function setupBGM() {
+  const audio = document.createElement('audio');
+  audio.src = chrome.runtime.getURL('bgm.wav');
+  audio.loop = true;
+  audio.volume = 0.4;
+
+  // ページのユーザー操作後に自動再生（ブラウザポリシー対応）
+  let started = false;
+  function tryPlay() {
+    if (started) return;
+    started = true;
+    audio.play().catch(() => { started = false; });
+  }
+  document.addEventListener('click', tryPlay, { once: false });
+  document.addEventListener('keydown', tryPlay, { once: false });
+
+  // ミュート / カラオケ切り替えボタン
+  const btn = document.createElement('button');
+  btn.textContent = '🔊';
+  btn.title = 'BGM ミュート切り替え';
+  Object.assign(btn.style, {
+    position: 'fixed', bottom: '16px', right: '16px',
+    zIndex: '2147483647', width: '44px', height: '44px',
+    borderRadius: '50%', border: 'none',
+    background: 'rgba(0,0,0,0.55)', color: '#fff',
+    fontSize: '20px', cursor: 'pointer',
+    lineHeight: '44px', textAlign: 'center', padding: '0',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+  });
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    audio.muted = !audio.muted;
+    btn.textContent = audio.muted ? '🔇' : '🔊';
+    // ミュート解除時に再生開始されていなければ開始
+    if (!audio.muted) tryPlay();
+  });
+  document.body.appendChild(btn);
+})();
+
 const RESULT_AREA_ID = 'gacha-result-area';
 const REEL_COUNT = 6;
 

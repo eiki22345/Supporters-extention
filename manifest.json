@@ -15,5 +15,15 @@
     }
   ],
   "permissions": [],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "bgm.wav"
+      ],
+      "matches": [
+        "https://geek.supporterz.jp/*"
+      ]
+    }
+  ],
   "icons": {}
 }
