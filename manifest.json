@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "サポーターズ スロット 桜吹雪エフェクト",
+  "version": "1.0.0",
+  "description": "スロットで『サポーターズ』が揃ったら桜吹雪を表示するChrome拡張機能",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://geek.supporterz.jp/apps/supporterz-challenge*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [],
+  "icons": {}
+}
