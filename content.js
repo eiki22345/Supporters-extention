@@ -7,7 +7,7 @@
 // BGM（bgm.wav をループ再生） + ミュートボタン
 // ──────────────────────────────────────────────────
 (function setupBGM() {
-  const audio = document.createElement('audio');
+  const audio = new Audio();
   audio.src = chrome.runtime.getURL('bgm.wav');
   audio.loop = true;
   audio.volume = 0.4;
@@ -16,13 +16,16 @@
   let started = false;
   function tryPlay() {
     if (started) return;
-    started = true;
-    audio.play().catch(() => { started = false; });
+    audio.play().then(() => {
+      started = true;
+      document.removeEventListener('click', tryPlay);
+      document.removeEventListener('keydown', tryPlay);
+    }).catch(() => { });
   }
-  document.addEventListener('click', tryPlay, { once: false });
-  document.addEventListener('keydown', tryPlay, { once: false });
+  document.addEventListener('click', tryPlay);
+  document.addEventListener('keydown', tryPlay);
 
-  // ミュート / カラオケ切り替えボタン
+  // ミュートボタン
   const btn = document.createElement('button');
   btn.textContent = '🔊';
   btn.title = 'BGM ミュート切り替え';
@@ -39,7 +42,6 @@
     e.stopPropagation();
     audio.muted = !audio.muted;
     btn.textContent = audio.muted ? '🔇' : '🔊';
-    // ミュート解除時に再生開始されていなければ開始
     if (!audio.muted) tryPlay();
   });
   document.body.appendChild(btn);
@@ -47,6 +49,7 @@
 
 const RESULT_AREA_ID = 'gacha-result-area';
 const REEL_COUNT = 6;
+const GIKUSAI_PROB = 0.03; // 技育祭超レア演出（約3%）
 
 // パターン → エフェクト関数の対応表
 const EFFECT_MAP = {
@@ -67,37 +70,131 @@ const EFFECT_MAP = {
 // ──────────────────────────────────────────────────
 // MutationObserver でガチャ結果エリアを監視
 // ──────────────────────────────────────────────────
-let animationTriggered = false;
+let _lastTriggeredText = null; // 同一結果の二重発火防止
+let _checkTimer = null;
 
 const observer = new MutationObserver(() => {
-  if (animationTriggered) return;
-  const area = document.getElementById(RESULT_AREA_ID);
-  if (!area) return;
-  const cards = Array.from(area.children).filter(el => el.tagName === 'DIV');
-  if (cards.length !== REEL_COUNT) return;
+  // DOM更新が完全に反映されてから読み取る（デバウンス）
+  clearTimeout(_checkTimer);
+  _checkTimer = setTimeout(() => {
+    const area = document.getElementById(RESULT_AREA_ID);
+    if (!area) return;
+    const cards = Array.from(area.children).filter(el => el.tagName === 'DIV');
 
-  const text = cards.map(el => el.innerText.trim()).join('');
-  const effectFn = EFFECT_MAP[text];
-  if (effectFn) {
-    animationTriggered = true;
-    setTimeout(() => effectFn(), 1600);
-    setTimeout(() => { animationTriggered = false; }, 10000);
-  }
+    // スピン中（カードが揃っていない）はリセット → 次の結果を必ず検知できる
+    if (cards.length !== REEL_COUNT) {
+      _lastTriggeredText = null;
+      return;
+    }
+
+    const text = cards.map(el => el.innerText.trim()).join('');
+
+    // 直前と同じテキストなら多重発火しない
+    if (text === _lastTriggeredText) return;
+    _lastTriggeredText = text;
+
+    const effectFn = EFFECT_MAP[text];
+    const hiroyukiHit = Math.random() < GIKUSAI_PROB;
+
+    if (effectFn) {
+      setTimeout(() => effectFn(), 1600);
+    }
+    // サポーターズ揃い時 → 技育祭花火 + ひろゆき動画
+    if (text === 'サポーターズ') {
+      setTimeout(() => launchGikusai(), 4500);
+      setTimeout(() => showHiroyukiVideo(), 1600);
+    }
+    // ランダム3%ヒット時 → ひろゆき動画のみ
+    if (hiroyukiHit && text !== 'サポーターズ') {
+      setTimeout(() => showHiroyukiVideo(), 1600);
+    }
+  }, 50);
 });
 
 function startObserving() {
+  const OBS_OPTS = { childList: true, subtree: true, characterData: true };
   const area = document.getElementById(RESULT_AREA_ID);
   if (area) {
-    observer.observe(area, { childList: true });
+    observer.observe(area, OBS_OPTS);
   } else {
     const bodyObs = new MutationObserver(() => {
       const a = document.getElementById(RESULT_AREA_ID);
-      if (a) { bodyObs.disconnect(); observer.observe(a, { childList: true }); }
+      if (a) { bodyObs.disconnect(); observer.observe(a, OBS_OPTS); }
     });
     bodyObs.observe(document.body, { childList: true, subtree: true });
   }
 }
 startObserving();
+
+// ──────────────────────────────────────────────────
+// ひろゆき動画を右上にポップアップ表示
+// ──────────────────────────────────────────────────
+function showHiroyukiVideo() {
+  const existing = document.getElementById('hiroyuki-popup');
+  if (existing) existing.remove();
+
+  const wrapper = document.createElement('div');
+  wrapper.id = 'hiroyuki-popup';
+  Object.assign(wrapper.style, {
+    position: 'fixed', top: '16px', right: '72px',
+    zIndex: '2147483646',
+    width: '220px',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+    opacity: '0',
+    transform: 'translateY(-20px) scale(0.9)',
+    transition: 'opacity 0.35s ease, transform 0.35s cubic-bezier(0.2,1.4,0.4,1)',
+    cursor: 'pointer',
+  });
+
+  const video = document.createElement('video');
+  video.src = chrome.runtime.getURL('hiroyuki.mp4');
+  video.autoplay = true;
+  video.muted = false;
+  video.volume = 0.85;
+  video.playsInline = true;
+  Object.assign(video.style, {
+    display: 'block',
+    width: '100%',
+    height: 'auto',
+  });
+
+  // 閉じるボタン
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  Object.assign(closeBtn.style, {
+    position: 'absolute', top: '4px', right: '6px',
+    background: 'rgba(0,0,0,0.55)', color: '#fff',
+    border: 'none', borderRadius: '50%',
+    width: '22px', height: '22px',
+    fontSize: '12px', lineHeight: '22px',
+    textAlign: 'center', padding: '0',
+    cursor: 'pointer', zIndex: '1',
+  });
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
+
+  wrapper.appendChild(video);
+  wrapper.appendChild(closeBtn);
+  document.body.appendChild(wrapper);
+
+  // フェードイン
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    wrapper.style.opacity = '1';
+    wrapper.style.transform = 'translateY(0) scale(1)';
+  }));
+
+  // 動画が終わったら自動で消える
+  function dismiss() {
+    wrapper.style.opacity = '0';
+    wrapper.style.transform = 'translateY(-20px) scale(0.9)';
+    setTimeout(() => wrapper.remove(), 370);
+  }
+  video.addEventListener('ended', dismiss);
+}
 
 // ──────────────────────────────────────────────────
 // ユーティリティ
@@ -548,5 +645,136 @@ function launchImpact() {
       ctx.strokeStyle = `rgba(255,200,0,${(1 - rp) * 0.6 * fade})`;
       ctx.lineWidth = 6 - r * 1.5; ctx.stroke();
     }
+  });
+}
+
+// ══════════════════════════════════════════════════
+// 超レア — 技育祭！花火乱舞＋レインボーテキスト
+// ══════════════════════════════════════════════════
+function launchGikusai() {
+  // 背景フラッシュ（白→虹グラデ）
+  const flash = document.createElement('div');
+  Object.assign(flash.style, {
+    position: 'fixed', top: '0', left: '0',
+    width: '100vw', height: '100vh',
+    background: 'radial-gradient(circle, #fff 0%, rgba(255,220,50,0.6) 60%, transparent 100%)',
+    zIndex: '2147483645', pointerEvents: 'none',
+    opacity: '0.95', transition: 'opacity 600ms ease',
+  });
+  document.body.appendChild(flash);
+  requestAnimationFrame(() => requestAnimationFrame(() => { flash.style.opacity = '0'; }));
+  setTimeout(() => flash.remove(), 700);
+
+  // 「技育祭!!」虹テキスト
+  const title = document.createElement('div');
+  title.textContent = '技育祭!!';
+  Object.assign(title.style, {
+    position: 'fixed', top: '40%', left: '50%',
+    transform: 'translate(-50%,-50%) scale(0.1)',
+    fontSize: '18vw', fontWeight: '900',
+    background: 'linear-gradient(90deg,#ff0080,#ff8c00,#ffe600,#00e676,#00b0ff,#a855f7)',
+    webkitBackgroundClip: 'text', webkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+    filter: 'drop-shadow(0 0 24px rgba(255,200,0,0.9))',
+    zIndex: '2147483647', pointerEvents: 'none',
+    opacity: '1',
+    transition: 'transform 0.5s cubic-bezier(0.15,1.6,0.4,1), opacity 1500ms ease 3500ms',
+  });
+  document.body.appendChild(title);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    title.style.transform = 'translate(-50%,-50%) scale(1)';
+    title.style.opacity = '0';
+  }));
+  setTimeout(() => title.remove(), 5200);
+
+  // 花火キャンバス
+  const COLORS = [
+    '#ff4081', '#ff9800', '#ffee58', '#69f0ae', '#40c4ff', '#ea80fc',
+    '#ff6d00', '#76ff03', '#00e5ff', '#d500f9', '#ff1744', '#ffea00',
+  ];
+  const rockets = [];
+
+  function makeRocket(cx, cy) {
+    const count = 80 + Math.floor(Math.random() * 60);
+    const hue = Math.floor(Math.random() * 360);
+    const particles = [];
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+      const speed = 3 + Math.random() * 9;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.012 + Math.random() * 0.018,
+        size: 2 + Math.random() * 4,
+        color: `hsl(${hue + Math.random() * 40},100%,${55 + Math.random() * 20}%)`,
+        trail: [],
+      });
+    }
+    return { particles, done: false };
+  }
+
+  runAnimation('fx-gikusai', 8000, (ctx, canvas, elapsed, fade) => {
+    // 新しいロケット打ち上げ（最初の4秒間）
+    if (elapsed < 4000 && Math.random() < 0.06) {
+      const cx = canvas.width * (0.15 + Math.random() * 0.7);
+      const cy = canvas.height * (0.1 + Math.random() * 0.45);
+      rockets.push(makeRocket(cx, cy));
+    }
+    // 最初の打ち上げ保証
+    if (rockets.length === 0 && elapsed < 100) {
+      for (let i = 0; i < 5; i++) {
+        rockets.push(makeRocket(
+          canvas.width * (0.15 + i * 0.18),
+          canvas.height * (0.15 + Math.random() * 0.35)
+        ));
+      }
+    }
+
+    rockets.forEach(rocket => {
+      let allDead = true;
+      rocket.particles.forEach(p => {
+        if (p.life <= 0) return;
+        allDead = false;
+        // 軌跡
+        p.trail.push({ x: p.x, y: p.y, life: p.life });
+        if (p.trail.length > 5) p.trail.shift();
+        p.trail.forEach((pt, ti) => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, p.size * pt.life * 0.4, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = pt.life * 0.3 * fade * ((ti + 1) / p.trail.length);
+          ctx.fill();
+        });
+        // パーティクル本体
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.globalAlpha = p.life * fade;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // 物理
+        p.x += p.vx; p.y += p.vy;
+        p.vy += 0.12; p.vx *= 0.985;
+        p.life -= p.decay;
+      });
+      if (allDead) rocket.done = true;
+    });
+
+    // キラキラ星屑
+    for (let i = 0; i < 30; i++) {
+      const sx = (elapsed * (0.3 + i * 0.07) + i * 137.5) % canvas.width;
+      const sy = (elapsed * (0.2 + i * 0.05) + i * 97.3) % canvas.height;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.globalAlpha = Math.abs(Math.sin(elapsed * 0.005 + i)) * 0.6 * fade;
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
   });
 }

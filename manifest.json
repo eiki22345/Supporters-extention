@@ -18,7 +18,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "bgm.wav"
+        "bgm.wav",
+        "hiroyuki.mp4"
       ],
       "matches": [
         "https://geek.supporterz.jp/*"
