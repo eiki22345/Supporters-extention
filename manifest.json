@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "サポーターズ スロット 桜吹雪エフェクト",
+  "name": "サポーターズ アニメーションスロット",
   "version": "1.0.0",
-  "description": "スロットで『サポーターズ』が揃ったら桜吹雪を表示するChrome拡張機能",
+  "description": "サポーターズチャレンジの結果ごとにアニメーションを表示するChrome拡張機能",
   "content_scripts": [
     {
       "matches": [
