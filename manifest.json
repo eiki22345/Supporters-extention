@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "サポーターズチャレンジ エフェクト表示",
+  "version": "1.0.2",
+  "description": "geek.supporterz.jp のサポーターズチャレンジページで、ガチャ結果に応じたビジュアルエフェクトとBGMをページ上に重ねて表示します。対象サイト以外では動作しません。",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://geek.supporterz.jp/apps/supporterz-challenge*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "bgm.wav"
+      ],
+      "matches": [
+        "https://geek.supporterz.jp/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
